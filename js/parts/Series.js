@@ -325,7 +325,11 @@ Point.prototype = {
 			series.xData[i] = point.x;
 			series.yData[i] = series.toYData ? series.toYData(point) : point.y;
 			series.zData[i] = point.z;
-			series.options.data[i] = point.options;
+            if (isArray(series.options.data[0])) {
+              series.options.data[i] = [point.x].concat(series.yData[i]); // point.options;
+            } else {
+              series.options.data[i] = point.options;
+            }
 
 			// redraw
 			series.isDirty = true;
