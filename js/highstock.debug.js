@@ -5,6 +5,7 @@ var files = [
 	"Globals.js",
 	"Utilities.js",
 	"PathAnimation.js",
+    "JQueryAdapter.js",
 	"Adapters.js",
 	"Options.js",
 	"Color.js",
