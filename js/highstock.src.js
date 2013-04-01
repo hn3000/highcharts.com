@@ -2,7 +2,7 @@
 // @compilation_level SIMPLE_OPTIMIZATIONS
 
 /**
- * @license Highstock JS v1.3.0 (2013-03-22)
+ * @license Highstock JS v1.3.0 (2013-04-01)
  *
  * (c) 2009-2013 Torstein Hønsi
  *
@@ -12158,7 +12158,11 @@ Point.prototype = {
 			series.xData[i] = point.x;
 			series.yData[i] = series.toYData ? series.toYData(point) : point.y;
 			series.zData[i] = point.z;
-			series.options.data[i] = point.options;
+            if (isArray(series.options.data[0])) {
+              series.options.data[i] = [point.x].concat(series.yData[i]); // point.options;
+            } else {
+              series.options.data[i] = point.options;
+            }
 
 			// redraw
 			series.isDirty = true;
@@ -19042,7 +19046,7 @@ seriesProto.init = function () {
 seriesProto.setCompare = function (compare) {
 
 	// Set or unset the modifyValue method
-	this.modifyValue = (compare === 'value' || compare === 'percent') ? function (value, point) {
+	this.modifyValue = (compare === 'value' || compare === 'percent') ? function (value, point) {
 		var compareValue = this.compareValue;
 		
 		// get the modified value
@@ -19238,8 +19242,8 @@ Point.prototype.tooltipFormatter = function (pointFormat) {
 						maxIndex = xAxis.val2lin(max, true);
 				
 						// Set the slope and offset of the values compared to the indices in the ordinal positions
-						axis.ordinalSlope = slope = (max - min) / (maxIndex - minIndex);
-						axis.ordinalOffset = min - (minIndex * slope);
+						axis.ordinalSlope = slope = (max - min - 2*series.pointRange) / (maxIndex - minIndex);
+						axis.ordinalOffset = min - (minIndex * slope) + series.pointRange;
 						
 					} else {
 						axis.ordinalPositions = axis.ordinalSlope = axis.ordinalOffset = UNDEFINED;
