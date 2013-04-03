@@ -110,8 +110,8 @@
 						maxIndex = xAxis.val2lin(max, true);
 				
 						// Set the slope and offset of the values compared to the indices in the ordinal positions
-						axis.ordinalSlope = slope = (max - min - 2*series.pointRange) / (maxIndex - minIndex);
-						axis.ordinalOffset = min - (minIndex * slope) + series.pointRange;
+						axis.ordinalSlope = slope = (max - min) / (maxIndex - minIndex);
+						axis.ordinalOffset = min - (minIndex * slope);
 						
 					} else {
 						axis.ordinalPositions = axis.ordinalSlope = axis.ordinalOffset = UNDEFINED;
