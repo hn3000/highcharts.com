@@ -28,15 +28,15 @@ function merge() {
 		doCopy = function (copy, original) {
 			var value, key;
 
+			// An object is replacing a primitive
+			if (typeof copy !== 'object') {
+				copy = {};
+			}
+
 			for (key in original) {
 				if (original.hasOwnProperty(key)) {
 					value = original[key];
 
-					// An object is replacing a primitive
-					if (typeof copy !== 'object') {
-						copy = {};
-					}
-						
 					// Copy the contents of objects, but not arrays or DOM nodes
 					if (value && typeof value === 'object' && Object.prototype.toString.call(value) !== '[object Array]'
 							&& typeof value.nodeType !== 'number') {
@@ -257,18 +257,6 @@ function extendClass(parent, members) {
 }
 
 /**
- * How many decimals are there in a number
- */
-function getDecimals(number) {
-	
-	number = (number || 0).toString();
-	
-	return number.indexOf('.') > -1 ? 
-		number.split('.')[1].length :
-		0;
-}
-
-/**
  * Format a number and return a string based on input settings
  * @param {Number} number The input number to format
  * @param {Number} decimals The amount of decimals
@@ -278,14 +266,14 @@ function getDecimals(number) {
 function numberFormat(number, decimals, decPoint, thousandsSep) {
 	var lang = defaultOptions.lang,
 		// http://kevin.vanzonneveld.net/techblog/article/javascript_equivalent_for_phps_number_format/
-		n = number,
+		n = +number || 0,
 		c = decimals === -1 ?
-			getDecimals(number) :
+			(n.toString().split('.')[1] || '').length : // preserve decimals
 			(isNaN(decimals = mathAbs(decimals)) ? 2 : decimals),
 		d = decPoint === undefined ? lang.decimalPoint : decPoint,
 		t = thousandsSep === undefined ? lang.thousandsSep : thousandsSep,
 		s = n < 0 ? "-" : "",
-		i = String(pInt(n = mathAbs(+n || 0).toFixed(c))),
+		i = String(pInt(n = mathAbs(n).toFixed(c))),
 		j = i.length > 3 ? i.length % 3 : 0;
 
 	return s + (j ? i.substr(0, j) + t : "") + i.substr(j).replace(/(\d{3})(?=\d)/g, "$1" + t) +
@@ -397,7 +385,7 @@ function formatSingle(format, val) {
 
 	if (floatRegex.test(format)) { // float
 		decimals = format.match(decRegex);
-		decimals = decimals ? decimals[1] : 6;
+		decimals = decimals ? decimals[1] : -1;
 		val = numberFormat(
 			val,
 			decimals,
@@ -458,6 +446,13 @@ function format(str, ctx) {
 	}
 	ret.push(str);
 	return ret.join('');
+}
+
+/**
+ * Get the magnitude of a number
+ */
+function getMagnitude(num) {
+	return math.pow(10, mathFloor(math.log(num) / math.LN10));
 }
 
 /**
@@ -572,7 +567,11 @@ function normalizeTimeTickInterval(tickInterval, unitsOption) {
 	}
 
 	// get the count
-	count = normalizeTickInterval(tickInterval / interval, multiples);
+	count = normalizeTickInterval(
+		tickInterval / interval, 
+		multiples,
+		unit[0] === YEAR ? getMagnitude(tickInterval / interval) : 1 // #1913
+	);
 	
 	return {
 		unitRange: interval,
@@ -674,11 +673,6 @@ function getTimeTicks(normalizedInterval, min, max, startOfWeek) {
 			// else, the interval is fixed and we use simple addition
 			} else {
 				time += interval * count;
-				
-				// mark new days if the time is dividable by day
-				if (interval <= timeUnits[HOUR] && time % timeUnits[DAY] === timezoneOffset) {
-					higherRanks[time] = DAY;
-				}
 			}
 	
 			i++;
@@ -686,7 +680,16 @@ function getTimeTicks(normalizedInterval, min, max, startOfWeek) {
 	
 		// push the last time
 		tickPositions.push(time);
+
+
+		// mark new days if the time is dividible by day (#1649, #1760)
+		each(grep(tickPositions, function (time) {
+			return interval <= timeUnits[HOUR] && time % timeUnits[DAY] === timezoneOffset;
+		}), function (time) {
+			higherRanks[time] = DAY;
+		});
 	}
+
 
 	// record information on the chosen unit - for dynamic label formatter
 	tickPositions.info = extend(normalizedInterval, {

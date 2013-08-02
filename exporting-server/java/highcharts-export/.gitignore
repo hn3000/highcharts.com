@@ -1,5 +1,5 @@
+/.settings/
+*sublime*
 .classpath
 .project
-*sublime*
-/.settings/
 target/

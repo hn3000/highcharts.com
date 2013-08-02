@@ -95,6 +95,22 @@ Highcharts.VMLElement = VMLElement = {
 	updateTransform: SVGElement.prototype.htmlUpdateTransform,
 
 	/**
+	 * Set the rotation of a span with oldIE's filter
+	 */
+	setSpanRotation: function (rotation, sintheta, costheta) {
+		// Adjust for alignment and rotation. Rotation of useHTML content is not yet implemented
+		// but it can probably be implemented for Firefox 3.5+ on user request. FF3.5+
+		// has support for CSS3 transform. The getBBox method also needs to be updated
+		// to compensate for the rotation, like it currently does for SVG.
+		// Test case: http://highcharts.com/tests/?file=text-rotation
+		css(this.element, {
+			filter: rotation ? ['progid:DXImageTransform.Microsoft.Matrix(M11=', costheta,
+				', M12=', -sintheta, ', M21=', sintheta, ', M22=', costheta,
+				', sizingMethod=\'auto expand\')'].join('') : NONE
+		});
+	},
+
+	/**
 	 * Get or set attributes
 	 */
 	attr: function (hash, val) {
@@ -165,7 +181,8 @@ Highcharts.VMLElement = VMLElement = {
 
 						// convert paths
 						i = value.length;
-						var convertedPath = [];
+						var convertedPath = [],
+							clockwise;
 						while (i--) {
 
 							// Multiply by 10 to allow subpixel precision.
@@ -181,13 +198,14 @@ Highcharts.VMLElement = VMLElement = {
 								// When the start X and end X coordinates of an arc are too close,
 								// they are rounded to the same value above. In this case, substract 1 from the end X
 								// position. #760, #1371. 
-								if (value[i] === 'wa' || value[i] === 'at') {
+								if (value.isArc && (value[i] === 'wa' || value[i] === 'at')) {
+									clockwise = value[i] === 'wa' ? 1 : -1; // #1642
 									if (convertedPath[i + 5] === convertedPath[i + 7]) {
-										convertedPath[i + 7] -= 1;
+										convertedPath[i + 7] -= clockwise;
 									}
 									// Start and end Y (#1410)
 									if (convertedPath[i + 6] === convertedPath[i + 8]) {
-										convertedPath[i + 8] -= 1;
+										convertedPath[i + 8] -= clockwise;
 									}
 								}
 							}
@@ -225,7 +243,7 @@ Highcharts.VMLElement = VMLElement = {
 							// outside the viewport. So the visibility is actually opposite of 
 							// the expected value. This applies to the tooltip only. 
 							if (!docMode8) {
-								elemStyle[key] = value ? HIDDEN : VISIBLE;
+								elemStyle[key] = value ? VISIBLE : HIDDEN;
 							}
 							key = 'top';
 						}
@@ -314,7 +332,9 @@ Highcharts.VMLElement = VMLElement = {
 						
 					// rotation on VML elements
 					} else if (nodeName === 'shape' && key === 'rotation') {
-						wrapper[key] = value;
+						
+						wrapper[key] = element.style[key] = value; // style is for #1873
+
 						// Correction for the 1x1 size of the shape container. Used in gauge needles.
 						element.style.left = -mathRound(mathSin(value * deg2rad) + 1) + PX;
 						element.style.top = mathRound(mathCos(value * deg2rad)) + PX;
@@ -866,12 +886,14 @@ var VMLRendererExtension = { // inherit SVGRenderer
 	 * @param {Number} r
 	 */
 	circle: function (x, y, r) {
+		var circle = this.symbol('circle');
 		if (isObject(x)) {
 			r = x.r;
 			y = x.y;
 			x = x.x;
 		}
-		return this.symbol('circle').attr({ x: x - r, y: y - r, width: 2 * r, height: 2 * r });
+		circle.isCircle = true; // Causes x and y to mean center (#1682)
+		return circle.attr({ x: x, y: y, width: 2 * r, height: 2 * r });
 	},
 
 	/**
@@ -1008,12 +1030,19 @@ var VMLRendererExtension = { // inherit SVGRenderer
 				'e' // close
 			);
 			
+			ret.isArc = true;
 			return ret;
 
 		},
 		// Add circle symbol path. This performs significantly faster than v:oval.
-		circle: function (x, y, w, h) {
+		circle: function (x, y, w, h, wrapper) {
+			// Center correction, #1682
+			if (wrapper && wrapper.isCircle) {
+				x -= w / 2;
+				y -= h / 2;
+			}
 
+			// Return the path
 			return [
 				'wa', // clockwisearcto
 				x, // left

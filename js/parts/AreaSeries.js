@@ -22,11 +22,16 @@ var AreaSeries = extendClass(Series, {
 	 */ 
 	getSegments: function () {
 		var segments = [],
-			stack = this.yAxis.stacks[this.stackKey],
+			segment = [],
+			keys = [],
+			xAxis = this.xAxis,
+			yAxis = this.yAxis,
+			stack = yAxis.stacks[this.stackKey],
 			pointMap = {},
 			plotX,
 			plotY,
 			points = this.points,
+			val,
 			i,
 			x;
 
@@ -36,19 +41,27 @@ var AreaSeries = extendClass(Series, {
 				pointMap[points[i].x] = points[i];
 			}
 
+			// Sort the keys (#1651)
 			for (x in stack) {
+				keys.push(+x);
+			}
+			keys.sort(function (a, b) {
+				return a - b;
+			});
 
+			each(keys, function (x) {
 				// The point exists, push it to the segment
 				if (pointMap[x]) {
-					segments.push(pointMap[x]);
+					segment.push(pointMap[x]);
 
 				// There is no point for this X value in this series, so we 
 				// insert a dummy point in order for the areas to be drawn
 				// correctly.
 				} else {
-					plotX = this.xAxis.translate(x);
-					plotY = this.yAxis.toPixels(stack[x].cum, true);
-					segments.push({ 
+					plotX = xAxis.translate(x);
+					val = stack[x].percent ? (stack[x].total ? stack[x].cum * 100 / stack[x].total : 0) : stack[x].cum; // #1991
+					plotY = yAxis.toPixels(val, true);
+					segment.push({ 
 						y: null, 
 						plotX: plotX,
 						clientX: plotX, 
@@ -57,8 +70,11 @@ var AreaSeries = extendClass(Series, {
 						onMouseOver: noop
 					});
 				}
+			});
+
+			if (segment.length) {
+				segments.push(segment);
 			}
-			segments = [segments];
 
 		} else {
 			Series.prototype.getSegments.call(this);
@@ -140,10 +156,11 @@ var AreaSeries = extendClass(Series, {
 			areaPath = this.areaPath,
 			options = this.options,
 			negativeColor = options.negativeColor,
+			negativeFillColor = options.negativeFillColor,
 			props = [['area', this.color, options.fillColor]]; // area name, main color, fill color
 		
-		if (negativeColor) {
-			props.push(['areaNeg', options.negativeColor, options.negativeFillColor]);
+		if (negativeColor || negativeFillColor) {
+			props.push(['areaNeg', negativeColor, negativeFillColor]);
 		}
 		
 		each(props, function (prop) {
@@ -159,7 +176,7 @@ var AreaSeries = extendClass(Series, {
 					.attr({
 						fill: pick(
 							prop[2],
-							Color(prop[1]).setOpacity(options.fillOpacity || 0.75).get()
+							Color(prop[1]).setOpacity(pick(options.fillOpacity, 0.75)).get()
 						),
 						zIndex: 0 // #1069
 					}).add(series.group);

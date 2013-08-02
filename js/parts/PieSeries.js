@@ -5,6 +5,7 @@ defaultPlotOptions.pie = merge(defaultSeriesOptions, {
 	borderColor: '#FFFFFF',
 	borderWidth: 1,
 	center: [null, null],
+	clip: false,
 	colorByPoint: true, // always true for pies
 	dataLabels: {
 		// align: null,
@@ -64,8 +65,8 @@ var PiePoint = extendClass(Point, {
 		});
 
 		// add event listener for select
-		toggleSlice = function () {
-			point.slice();
+		toggleSlice = function (e) {
+			point.slice(e.type === 'select');
 		};
 		addEvent(point, 'select', toggleSlice);
 		addEvent(point, 'unselect', toggleSlice);
@@ -210,6 +211,39 @@ var PieSeries = {
 			this.chart.redraw();
 		} 
 	},
+
+	/**
+	 * Extend the generatePoints method by adding total and percentage properties to each point
+	 */
+	generatePoints: function () {
+		var i,
+			total = 0,
+			points,
+			len,
+			point,
+			ignoreHiddenPoint = this.options.ignoreHiddenPoint;
+
+		Series.prototype.generatePoints.call(this);
+
+		// Populate local vars
+		points = this.points;
+		len = points.length;
+		
+		// Get the total sum
+		for (i = 0; i < len; i++) {
+			point = points[i];
+			total += (ignoreHiddenPoint && !point.visible) ? 0 : point.y;
+		}
+		this.total = total;
+
+		// Set each point's properties
+		for (i = 0; i < len; i++) {
+			point = points[i];
+			point.percentage = (point.y / total) * 100;
+			point.total = total;
+		}
+		
+	},
 	
 	/**
 	 * Get the center of the pie based on the size and center options relative to the  
@@ -219,7 +253,8 @@ var PieSeries = {
 		
 		var options = this.options,
 			chart = this.chart,
-			slicingRoom = 2 * (options.dataLabels && options.dataLabels.enabled ? 0 : (options.slicedOffset || 0)),
+			slicingRoom = 2 * (options.slicedOffset || 0),
+			handleSlicingRoom,
 			plotWidth = chart.plotWidth - 2 * slicingRoom,
 			plotHeight = chart.plotHeight - 2 * slicingRoom,
 			centerOption = options.center,
@@ -229,6 +264,7 @@ var PieSeries = {
 		
 		return map(positions, function (length, i) {
 			isPercent = /%$/.test(length);
+			handleSlicingRoom = i < 2 || (i === 2 && isPercent);
 			return (isPercent ?
 				// i == 0: centerX, relative to width
 				// i == 1: centerY, relative to height
@@ -236,7 +272,7 @@ var PieSeries = {
 				// i == 4: innerSize, relative to smallestSize
 				[plotWidth, plotHeight, smallestSize, smallestSize][i] *
 					pInt(length) / 100 :
-				length) + (i < 3 ? slicingRoom : 0);
+				length) + (handleSlicingRoom ? slicingRoom : 0);
 		});
 	},
 	
@@ -246,8 +282,7 @@ var PieSeries = {
 	translate: function (positions) {
 		this.generatePoints();
 		
-		var total = 0,
-			series = this,
+		var series = this,
 			cumulative = 0,
 			precision = 1000, // issue #172
 			options = series.options,
@@ -259,7 +294,6 @@ var PieSeries = {
 			startAngleRad = series.startAngleRad = mathPI / 180 * ((options.startAngle || 0) % 360 - 90),
 			points = series.points,
 			circ = 2 * mathPI,
-			fraction,
 			radiusX, // the x component of the radius vector for a given point
 			radiusY,
 			labelDistance = options.dataLabels.distance,
@@ -285,22 +319,15 @@ var PieSeries = {
 				(mathCos(angle) * (positions[2] / 2 + labelDistance));
 		};
 
-		// get the total sum
-		for (i = 0; i < len; i++) {
-			point = points[i];
-			total += (ignoreHiddenPoint && !point.visible) ? 0 : point.y;
-		}
-
 		// Calculate the geometry for each point
 		for (i = 0; i < len; i++) {
 			
 			point = points[i];
 			
 			// set start and end angle
-			fraction = total ? point.y / total : 0;
 			start = mathRound((startAngleRad + (cumulative * circ)) * precision) / precision;
 			if (!ignoreHiddenPoint || point.visible) {
-				cumulative += fraction;
+				cumulative += point.percentage / 100;
 			}
 			end = mathRound((startAngleRad + (cumulative * circ)) * precision) / precision;
 
@@ -337,6 +364,7 @@ var PieSeries = {
 			point.angle = angle;
 
 			// set the anchor point for data labels
+			connectorOffset = mathMin(connectorOffset, labelDistance / 2); // #1678
 			point.labelPos = [
 				positions[0] + radiusX + mathCos(angle) * labelDistance, // first break of connector
 				positions[1] + radiusY + mathSin(angle) * labelDistance, // a/a
@@ -349,10 +377,6 @@ var PieSeries = {
 					point.half ? 'right' : 'left', // alignment
 				angle // center angle
 			];
-			
-			// API properties
-			point.percentage = fraction * 100;
-			point.total = total;
 
 		}
 
@@ -475,7 +499,7 @@ var PieSeries = {
 			};
 
 		// get out if not enabled
-		if (!options.enabled && !series._hasPointLabels) {
+		if (!series.visible || (!options.enabled && !series._hasPointLabels)) {
 			return;
 		}
 
@@ -689,6 +713,7 @@ var PieSeries = {
 					dataLabel = point.dataLabel;
 					
 					if (dataLabel && dataLabel._pos) {
+						visibility = dataLabel._attr.visibility;
 						x = dataLabel.connX;
 						y = dataLabel.connY;
 						connectorPath = softConnector ? [

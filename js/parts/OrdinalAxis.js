@@ -64,13 +64,12 @@
 							ordinalPositions = ordinalPositions.concat(series.processedXData);
 							len = ordinalPositions.length;
 							
-							// if we're dealing with more than one series, remove duplicates
-							if (i && len) {
+							// remove duplicates (#1588)
+							ordinalPositions.sort(function (a, b) {
+								return a - b; // without a custom function it is sorted as strings
+							});
 							
-								ordinalPositions.sort(function (a, b) {
-									return a - b; // without a custom function it is sorted as strings
-								});
-							
+							if (len) {
 								i = len - 1;
 								while (i--) {
 									if (ordinalPositions[i] === ordinalPositions[i + 1]) {
@@ -331,6 +330,10 @@
 				});
 				median = distances[mathFloor(len / 2)];
 				
+				// Compensate for series that don't extend through the entire axis extent. #1675.
+				xMin = mathMax(xMin, processedXData[0]);
+				xMax = mathMin(xMax, processedXData[len - 1]);
+
 				// Return the factor needed for data grouping
 				return (len * median) / (xMax - xMin);
 			};
@@ -369,7 +372,7 @@
 					posLength,
 					outsideMax,
 					groupPositions = [],
-					lastGroupPosition = Number.MIN_VALUE,
+					lastGroupPosition = -Number.MAX_VALUE,
 					tickPixelIntervalOption = xAxis.options.tickPixelInterval;
 					
 				// The positions are not always defined, for example for ordinal positions when data
@@ -609,12 +612,13 @@
 		
 		var series = this,
 			segments,
-			gapSize = series.options.gapSize;
+			gapSize = series.options.gapSize,
+			xAxis = series.xAxis;
 	
 		// call base method
 		baseGetSegments.apply(series);
-		
-		if (gapSize) {
+			
+		if (xAxis.options.ordinal && gapSize) { // #1794
 		
 			// properties
 			segments = series.segments;
@@ -623,7 +627,7 @@
 			each(segments, function (segment, no) {
 				var i = segment.length - 1;
 				while (i--) {
-					if (segment[i + 1].x - segment[i].x > series.xAxis.closestPointRange * gapSize) {
+					if (segment[i + 1].x - segment[i].x > xAxis.closestPointRange * gapSize) {
 						segments.splice( // insert after this one
 							no + 1,
 							0,

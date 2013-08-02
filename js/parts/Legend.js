@@ -66,7 +66,6 @@ Legend.prototype = {
 			},
 			key,
 			val;
-
 		
 		if (legendItem) {
 			legendItem.css({ fill: textColor, color: textColor }); // color for #1553, oldIE
@@ -78,7 +77,7 @@ Legend.prototype = {
 		if (legendSymbol) {
 			
 			// Apply marker options
-			if (markerOptions) {
+			if (markerOptions && legendSymbol.isMarker) { // #585
 				markerOptions = item.convertAttribs(markerOptions);
 				for (key in markerOptions) {
 					val = markerOptions[key];
@@ -129,7 +128,7 @@ Legend.prototype = {
 		// destroy SVG elements
 		each(['legendItem', 'legendLine', 'legendSymbol', 'legendGroup'], function (key) {
 			if (item[key]) {
-				item[key].destroy();
+				item[key] = item[key].destroy();
 			}
 		});
 
@@ -188,7 +187,8 @@ Legend.prototype = {
 		var options = this.options,
 			padding = this.padding,
 			titleOptions = options.title,
-			titleHeight = 0;
+			titleHeight = 0,
+			bBox;
 		
 		if (titleOptions.text) {
 			if (!this.title) {
@@ -197,7 +197,9 @@ Legend.prototype = {
 					.css(titleOptions.style)
 					.add(this.group);
 			}
-			titleHeight = this.title.getBBox().height;
+			bBox = this.title.getBBox();
+			titleHeight = bBox.height;
+			this.offsetWidth = bBox.width; // #1717
 			this.contentGroup.attr({ translateY: titleHeight });
 		}
 		this.titleHeight = titleHeight;
@@ -218,6 +220,7 @@ Legend.prototype = {
 			itemStyle = legend.itemStyle,
 			itemHiddenStyle = legend.itemHiddenStyle,
 			padding = legend.padding,
+			itemDistance = horizontal ? pick(options.itemDistance, 8) : 0, // docs
 			ltr = !options.rtl,
 			itemHeight,
 			widthOption = options.width,
@@ -313,7 +316,7 @@ Legend.prototype = {
 		bBox = li.getBBox();
 
 		itemWidth = item.legendItemWidth =
-			options.itemWidth || symbolWidth + symbolPadding + bBox.width + padding +
+			options.itemWidth || symbolWidth + symbolPadding + bBox.width + itemDistance +
 			(showCheckbox ? 20 : 0);
 		legend.itemHeight = itemHeight = bBox.height;
 
@@ -351,7 +354,7 @@ Legend.prototype = {
 
 		// the width of the widest item
 		legend.offsetWidth = widthOption || mathMax(
-			horizontal ? legend.itemX - initialItemX : itemWidth,
+			(horizontal ? legend.itemX - initialItemX - itemDistance : itemWidth) + padding,
 			legend.offsetWidth
 		);
 	},
@@ -390,8 +393,6 @@ Legend.prototype = {
 				.add(legendGroup);
 			legend.scrollGroup = renderer.g()
 				.add(legend.contentGroup);
-			legend.clipRect = renderer.clipRect(0, 0, 9999, chart.chartHeight);
-			legend.contentGroup.clip(legend.clipRect);
 		}
 		
 		legend.renderTitle();
@@ -535,12 +536,17 @@ Legend.prototype = {
 		
 		// Reset the legend height and adjust the clipping rectangle
 		if (legendHeight > spaceHeight && !options.useHTML) {
-			
+
 			this.clipHeight = clipHeight = spaceHeight - 20 - this.titleHeight;
 			this.pageCount = pageCount = mathCeil(legendHeight / clipHeight);
 			this.currentPage = pick(this.currentPage, 1);
 			this.fullHeight = legendHeight;
 			
+			// Only apply clipping if needed. Clipping causes blurred legend in PDF export (#1787)
+			if (!clipRect) {
+				clipRect = legend.clipRect = renderer.clipRect(0, 0, 9999, 0);
+				legend.contentGroup.clip(clipRect);
+			}
 			clipRect.attr({
 				height: clipHeight
 			});

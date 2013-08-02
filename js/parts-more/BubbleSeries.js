@@ -24,6 +24,7 @@ defaultPlotOptions.bubble = merge(defaultPlotOptions.scatter, {
 	tooltip: {
 		pointFormat: '({point.x}, {point.y}), Size: {point.z}'
 	},
+	turboThreshold: 0, // docs: exclude from bubbles
 	zThreshold: 0
 });
 
@@ -88,7 +89,7 @@ seriesTypes.bubble = extendClass(seriesTypes.scatter, {
 			pos = zRange > 0 ? // relative size, a number between 0 and 1
 				(zData[i] - zMin) / (zMax - zMin) : 
 				0.5;
-			radii.push(math.round(minSize + pos * (maxSize - minSize)) / 2);
+			radii.push(math.ceil(minSize + pos * (maxSize - minSize)) / 2);
 		}
 		this.radii = radii;
 	},
@@ -139,7 +140,7 @@ seriesTypes.bubble = extendClass(seriesTypes.scatter, {
 		
 		while (i--) {
 			point = data[i];
-			radius = radii[i];
+			radius = radii ? radii[i] : 0; // #1737
 
 			// Flag for negativeColor to be applied in Series.js
 			point.negative = point.z < (this.options.zThreshold || 0);
@@ -161,7 +162,7 @@ seriesTypes.bubble = extendClass(seriesTypes.scatter, {
 					height: 2 * radius
 				};
 			} else { // below zThreshold
-				point.shapeArgs = point.plotY = point.dlBox = null;
+				point.shapeArgs = point.plotY = point.dlBox = UNDEFINED; // #1691
 			}
 		}
 	},
@@ -181,7 +182,8 @@ seriesTypes.bubble = extendClass(seriesTypes.scatter, {
 			radius
 		).attr({
 			zIndex: 3
-		}).add(item.legendGroup);		
+		}).add(item.legendGroup);
+		item.legendSymbol.isMarker = true;	
 		
 	},
 	
@@ -194,7 +196,8 @@ seriesTypes.bubble = extendClass(seriesTypes.scatter, {
  * necessary to avoid the bubbles to overflow.
  */
 Axis.prototype.beforePadding = function () {
-	var axisLength = this.len,
+	var axis = this,
+		axisLength = this.len,
 		chart = this.chart,
 		pxMin = 0, 
 		pxMax = axisLength,
@@ -218,6 +221,9 @@ Axis.prototype.beforePadding = function () {
 
 			if (series.type === 'bubble' && series.visible) {
 
+				// Correction for #1673
+				axis.allowZoomOutside = true;
+
 				// Cache it
 				activeSeries.push(series);
 
@@ -238,14 +244,16 @@ Axis.prototype.beforePadding = function () {
 					
 					// Find the min and max Z
 					zData = series.zData;
-					zMin = math.min(
-						zMin,
-						math.max(
-							arrayMin(zData), 
-							seriesOptions.displayNegative === false ? seriesOptions.zThreshold : -Number.MAX_VALUE
-						)
-					);
-					zMax = math.max(zMax, arrayMax(zData));
+					if (zData.length) { // #1735
+						zMin = math.min(
+							zMin,
+							math.max(
+								arrayMin(zData), 
+								seriesOptions.displayNegative === false ? seriesOptions.zThreshold : -Number.MAX_VALUE
+							)
+						);
+						zMax = math.max(zMax, arrayMax(zData));
+					}
 				}
 			}
 		});
@@ -269,7 +277,7 @@ Axis.prototype.beforePadding = function () {
 			}
 		});
 		
-		if (range > 0 && pick(this.options.min, this.userMin) === UNDEFINED) {
+		if (range > 0 && pick(this.options.min, this.userMin) === UNDEFINED && pick(this.options.max, this.userMax) === UNDEFINED) {
 			pxMax -= axisLength;
 			transA *= (axisLength + pxMin - pxMax) / axisLength;
 			this.min += pxMin / transA;

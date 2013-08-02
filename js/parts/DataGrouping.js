@@ -276,26 +276,11 @@ seriesProto.processData = function () {
 		processedYData = series.processedYData,
 		plotSizeX = chart.plotSizeX,
 		xAxis = series.xAxis,
-		groupPixelWidth = pick(xAxis.groupPixelWidth, dataGroupingOptions.groupPixelWidth),
-		dataLength = processedXData.length,
-		chartSeries = chart.series,
+		groupPixelWidth = xAxis.getGroupPixelWidth && xAxis.getGroupPixelWidth(),
 		nonGroupedPointRange = series.pointRange;
 
-	// attempt to solve #334: if multiple series are compared on the same x axis, give them the same
-	// group pixel width
-	if (!xAxis.groupPixelWidth) {
-		i = chartSeries.length;
-		while (i--) {
-			if (chartSeries[i].xAxis === xAxis && chartSeries[i].options[DATA_GROUPING]) {
-				groupPixelWidth = mathMax(groupPixelWidth, chartSeries[i].options[DATA_GROUPING].groupPixelWidth);
-			}
-		}
-		xAxis.groupPixelWidth = groupPixelWidth;
-		
-	}
-
 	// Execute grouping if the amount of points is greater than the limit defined in groupPixelWidth
-	if (dataLength > (plotSizeX / groupPixelWidth) || (dataLength && dataGroupingOptions.forced)) {
+	if (groupPixelWidth) {
 		hasGroupedData = true;
 
 		series.points = null; // force recreation of point instances in series.translate
@@ -411,7 +396,7 @@ seriesProto.tooltipHeaderFormatter = function (point) {
 		// if not grouped, and we don't have set the xDateFormat option, get the best fit,
 		// so if the least distance between points is one minute, show it, but if the 
 		// least distance is one day, skip hours and minutes etc.
-		} else if (!xDateFormat) {
+		} else if (!xDateFormat && dateTimeLabelFormats) {
 			for (n in timeUnits) {
 				if (timeUnits[n] >= xAxis.closestPointRange) {
 					xDateFormat = dateTimeLabelFormats[n][0];
@@ -482,6 +467,49 @@ wrap(seriesProto, 'setOptions', function (proceed, itemOptions) {
 	
 	return options;
 });
+
+/**
+ * Get the data grouping pixel width based on the greatest defined individual width
+ * of the axis' series, and if whether one of the axes need grouping.
+ */
+Axis.prototype.getGroupPixelWidth = function () {
+
+	var series = this.series,
+		len = series.length,
+		i,
+		groupPixelWidth = 0,
+		doGrouping = false,
+		dataLength,
+		dgOptions;
+
+	// If multiple series are compared on the same x axis, give them the same
+	// group pixel width (#334)
+	i = len;
+	while (i--) {
+		dgOptions = series[i].options.dataGrouping;
+		if (dgOptions) {
+			groupPixelWidth = mathMax(groupPixelWidth, dgOptions.groupPixelWidth);
+
+		}
+	}
+
+	// If one of the series needs grouping, apply it to all (#1634)
+	i = len;
+	while (i--) {
+		dgOptions = series[i].options.dataGrouping;
+		if (dgOptions) {
+		
+			dataLength = (series[i].processedXData || series[i].data).length;
+
+			// Execute grouping if the amount of points is greater than the limit defined in groupPixelWidth
+			if (series[i].hasGroupedData || dataLength > (this.chart.plotSizeX / groupPixelWidth) || (dataLength && dgOptions.forced)) {
+				doGrouping = true;
+			}
+		}
+	}
+	
+	return doGrouping ? groupPixelWidth : 0;
+};
 
 
 
