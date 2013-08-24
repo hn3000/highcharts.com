@@ -11,10 +11,21 @@
 			</ul>
 		</description>
 	</error>
+
+	<error id="12">
+		<title>Highcharts expects point configuration to be numbers or arrays in turbo mode</title>
+		<description>
+			This error occurs if the <code>series.data</code> option contains object configurations and the number
+			of points exceeds the <code>turboThreshold</code>. It can be fixed by either setting the <code>turboThreshold</code>
+			option to a higher value, or changing your point configurations to numbers or arrays. See <a href="http://api.highcharts.com/highcharts#plotOptions.series.turboThreshold">turboThreshold</a>.
+		</description>
+	</error>
+	
+
 	<error id="13">
 		<title>Rendering div not found</title>
 		<description>
-			This error occurs if the <a href="http://www.highcharts.com/ref/#chart--renderTo">chart.renderTo</a> 
+			This error occurs if the <a href="http://api.highcharts.com/#renderTo">chart.renderTo</a> 
 			option is misconfugured so that Highcharts is unable to find the HTML element to render the chart in.
 		</description>
 	</error>
@@ -64,6 +75,17 @@
 		<title>The requested axis does not exist</title>
 		<description>
 			<p>This error happens when you set a series' <code>xAxis</code> or <code>yAxis</code> property to point to an axis that does not exist.</p> 
+		</description>
+	</error>
+	
+	<error id="19">
+		<title>Too many ticks</title>
+		<description>
+			<p>This error happens when you try to apply too many ticks to an axis, specifically when you add more ticks than the axis
+				pixel length. In practice, it doesn't make sense to add ticks so densely that they can't be distinguished from each other. One cause of
+				the error may be that you set a <code>tickInterval</code> that is too small for the data value range. In general, <code>tickPixelInterval</code>
+				is a better option, as it will handle this automatically. Another case is if you try to set categories on a datetime axis, which will result
+				in Highcharts trying to add one tick on every millisecond since 1970.</p> 
 		</description>
 	</error>
 </errors>

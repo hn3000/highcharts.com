@@ -315,7 +315,11 @@ Point.prototype = {
 			if (isObject(options)) {
 				series.getAttribs();
 				if (graphic) {
-					graphic.attr(point.pointAttr[series.state]);
+					if (options.marker && options.marker.symbol) {
+						point.graphic = graphic.destroy();
+					} else {
+						graphic.attr(point.pointAttr[series.state]);
+					}
 				}
 			}
 
@@ -562,11 +566,11 @@ Series.prototype = {
 		var series = this,
 			eventType,
 			events,
-			linkedTo,
 			chartSeries = chart.series;
 
 		series.chart = chart;
 		series.options = options = series.setOptions(options); // merge with plotOptions
+		series.linkedSeries = [];
 
 		// bind the axes
 		series.bindAxes();
@@ -622,20 +626,6 @@ Series.prototype = {
 			series.name = series.name || 'Series ' + (i + 1);
 		});
 
-		// Linked series
-		linkedTo = options.linkedTo;
-		series.linkedSeries = [];
-		if (isString(linkedTo)) {
-			if (linkedTo === ':previous') {
-				linkedTo = chartSeries[series.index - 1];
-			} else {
-				linkedTo = chart.get(linkedTo);
-			}
-			if (linkedTo) {
-				linkedTo.linkedSeries.push(series);
-				series.linkedParent = linkedTo;
-			}
-		}
 	},
 	
 	/**
@@ -1035,9 +1025,9 @@ Series.prototype = {
 						yData[i] = pt[1];
 					}
 				}
-			} /* else {
+			} else {
 				error(12); // Highcharts expects configs to be numbers or arrays in turbo mode
-			}*/
+			}
 		} else {
 			for (i = 0; i < dataLength; i++) {
 				if (data[i] !== UNDEFINED) { // stray commas in oldIE
@@ -1112,6 +1102,8 @@ Series.prototype = {
 
 				// redraw
 				chart.isDirtyLegend = chart.isDirtyBox = true;
+				chart.linkSeries();
+				
 				if (redraw) {
 					chart.redraw(animation);
 				}
@@ -1311,7 +1303,7 @@ Series.prototype = {
 			yAxis = series.yAxis,
 			stacks = yAxis.stacks,
 			oldStacks = yAxis.oldStacks,
-			stacksMax = yAxis.stacksMax,
+			stackExtremes = yAxis.stackExtremes,
 			isNegative,
 			total,
 			stack,
@@ -1327,12 +1319,15 @@ Series.prototype = {
 
 			// Read stacked values into a stack based on the x value,
 			// the sign of y and the stack key. Stacking is also handled for null values (#739)
-			isNegative = y < threshold;
+			isNegative = series.negStacks && y < threshold;
 			key = isNegative ? negKey : stackKey;
 
-			// Set default stacksMax value for this stack
-			if (!stacksMax[key]) {
-				stacksMax[key] = y;
+			// Set default stackExtremes value for this stack
+			if (typeof y === 'number' && !stackExtremes[stackKey]) {
+				stackExtremes[stackKey] = {
+					dataMin: y,
+					dataMax: y
+				};
 			}
 
 			// Create empty object for this stack if it doesn't exist yet
@@ -1356,16 +1351,14 @@ Series.prototype = {
 
 
 			// add value to the stack total
-			stack.addValue(y);
-
-			stack.cacheExtremes(series, [total, total + y]);
-
-
-			if (stack.total > stacksMax[key] && !isNegative) {
-				stacksMax[key] = stack.total;
-			} else if (stack.total < stacksMax[key] && isNegative) {
-				stacksMax[key] = stack.total;
+			stack.addValue(y || 0);
+			stack.cacheExtremes(series, [total, total + (y || 0)]);
+			
+			if (typeof y === 'number') {
+				stackExtremes[stackKey].dataMin = mathMin(stackExtremes[stackKey].dataMin, stack.total, y);
+				stackExtremes[stackKey].dataMax = mathMax(stackExtremes[stackKey].dataMax, stack.total, y);
 			}
+
 		}
 
 		// reset old stacks
@@ -1373,21 +1366,25 @@ Series.prototype = {
 	},
 
 	/**
-	 * Calculate x and y extremes for visible data
+	 * Calculate Y extremes for visible data
 	 */
 	getExtremes: function () {
 		var xAxis = this.xAxis,
 			yAxis = this.yAxis,
 			stackKey = this.stackKey,
+			stackExtremes,
+			stackMin,
+			stackMax,
 			options = this.options,
-			threshold = options.threshold,
+			threshold = yAxis.isLog ? null : options.threshold,
 			xData = this.processedXData,
 			yData = this.processedYData,
 			yDataLength = yData.length,
 			activeYData = [],
 			activeCounter = 0,
-			xMin = xAxis.min,
-			xMax = xAxis.max,
+			xExtremes = xAxis.getExtremes(), // #2117, need to compensate for log X axis
+			xMin = xExtremes.min,
+			xMax = xExtremes.max,
 			validValue,
 			withinRange,
 			dataMin,
@@ -1399,8 +1396,12 @@ Series.prototype = {
 
 		// For stacked series, get the value from the stack
 		if (options.stacking) {
-			dataMin = yAxis.stacksMax['-' + stackKey] || threshold;
-			dataMax = yAxis.stacksMax[stackKey] || threshold;
+			stackExtremes = yAxis.stackExtremes[stackKey];
+			stackMin = stackExtremes.dataMin;
+			stackMax = stackExtremes.dataMax;
+
+			dataMin = mathMin(stackMin, pick(threshold, stackMin));
+			dataMax = mathMax(stackMax, pick(threshold, stackMax));
 		}
 
 		// If not stacking or threshold is null, iterate over values that are within the visible range
@@ -1470,7 +1471,7 @@ Series.prototype = {
 				xValue = point.x,
 				yValue = point.y,
 				yBottom = point.low,
-				stack = yAxis.stacks[(yValue < threshold ? '-' : '') + series.stackKey],
+				stack = yAxis.stacks[(series.negStacks && yValue < threshold ? '-' : '') + series.stackKey],
 				pointStack,
 				pointStackTotal;
 
@@ -1525,7 +1526,8 @@ Series.prototype = {
 
 			// Set the the plotY value, reset it for redraws
 			point.plotY = (typeof yValue === 'number' && yValue !== Infinity) ? 
-				mathRound(yAxis.translate(yValue, 0, 1, 0, 1) * 10) / 10 : // Math.round fixes #591
+				//mathRound(yAxis.translate(yValue, 0, 1, 0, 1) * 10) / 10 : // Math.round fixes #591
+				yAxis.translate(yValue, 0, 1, 0, 1) : 
 				UNDEFINED;
 			
 			// Set client related positions for mouse tracking
@@ -2909,9 +2911,8 @@ Series.prototype = {
 
 		} else { // create
 				
-			series.tracker = tracker = renderer.path(trackerPath)
+			series.tracker = renderer.path(trackerPath)
 				.attr({
-					'class': PREFIX + 'tracker',
 					'stroke-linejoin': 'round', // #1225
 					visibility: series.visible ? VISIBLE : HIDDEN,
 					stroke: TRACKER_FILL,
@@ -2919,15 +2920,20 @@ Series.prototype = {
 					'stroke-width' : options.lineWidth + (trackByArea ? 0 : 2 * snap),
 					zIndex: 2
 				})
-				.addClass(PREFIX + 'tracker')
-				.on('mouseover', onMouseOver)
-				.on('mouseout', function (e) { pointer.onTrackerMouseOut(e); })
-				.css(css)
-				.add(series.markerGroup);
+				.add(series.group);
 				
-			if (hasTouch) {
-				tracker.on('touchstart', onMouseOver);
-			} 
+			// The tracker is added to the series group, which is clipped, but is covered 
+			// by the marker group. So the marker group also needs to capture events.
+			each([series.tracker, series.markerGroup], function (tracker) {
+				tracker.addClass(PREFIX + 'tracker')
+					.on('mouseover', onMouseOver)
+					.on('mouseout', function (e) { pointer.onTrackerMouseOut(e); })
+					.css(css);
+
+				if (hasTouch) {
+					tracker.on('touchstart', onMouseOver);
+				} 
+			});
 		}
 
 	}

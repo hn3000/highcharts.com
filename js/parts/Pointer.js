@@ -45,6 +45,8 @@ Pointer.prototype = {
 	 */
 	normalize: function (e) {
 		var chartPosition,
+			chartX,
+			chartY,
 			ePos;
 
 		// common IE normalizing
@@ -62,10 +64,19 @@ Pointer.prototype = {
 		// get mouse position
 		this.chartPosition = chartPosition = offset(this.chart.container);
 
-		// Old IE and compatibility mode use clientX. #886, #2005.
+		// chartX and chartY
+		if (ePos.pageX === UNDEFINED) { // IE < 9. #886.
+			chartX = mathMax(e.x, e.clientX - chartPosition.left); // #2005, #2129: the second case is 
+				// for IE10 quirks mode within framesets
+			chartY = e.y;
+		} else {
+			chartX = ePos.pageX - chartPosition.left;
+			chartY = ePos.pageY - chartPosition.top;
+		}
+
 		return extend(e, {
-			chartX: mathRound(pick(ePos.pageX, ePos.clientX) - chartPosition.left),
-			chartY: mathRound(pick(ePos.pageY, ePos.clientY) - chartPosition.top)
+			chartX: mathRound(chartX),
+			chartY: mathRound(chartY)
 		});
 	},
 
@@ -344,11 +355,9 @@ Pointer.prototype = {
 			transform = {},
 			clip = {};
 
-		// On touch devices, only proceed to trigger click if a handler is defined
-		if (e.type === 'touchstart') {
-			if (followTouchMove || hasZoom) {
-				e.preventDefault();
-			}
+		// If we're capturing touch, prevent pseudo click events from happening
+		if (followTouchMove || hasZoom) {
+			e.preventDefault();
 		}
 			
 		// Normalize each touch
@@ -422,7 +431,7 @@ Pointer.prototype = {
 		chart.mouseIsDown = e.type;
 		chart.cancelClick = false;
 		chart.mouseDownX = this.mouseDownX = e.chartX;
-		this.mouseDownY = e.chartY;
+		chart.mouseDownY = this.mouseDownY = e.chartY;
 	},
 
 	/**
@@ -504,7 +513,7 @@ Pointer.prototype = {
 
 			// panning
 			if (clickedInside && !this.selectionMarker && chartOptions.panning) {
-				chart.pan(chartX);
+				chart.pan(e, chartOptions.panning);
 			}
 		}
 	},
@@ -601,7 +610,7 @@ Pointer.prototype = {
 		e = washMouseEvent(e);
 
 		// If we're outside, hide the tooltip
-		if (chartPosition && hoverSeries && hoverSeries.isCartesian &&
+		if (chartPosition && hoverSeries && !this.inClass(e.target, 'highcharts-tracker') &&
 			!chart.isInsidePlot(e.pageX - chartPosition.left - chart.plotLeft,
 			e.pageY - chartPosition.top - chart.plotTop)) {
 				this.reset();
@@ -633,7 +642,8 @@ Pointer.prototype = {
 		} 
 		
 		// Show the tooltip and run mouse over events (#977)
-		if (chart.isInsidePlot(e.chartX - chart.plotLeft, e.chartY - chart.plotTop) && !chart.openMenu) {
+		if ((this.inClass(e.target, 'highcharts-tracker') || 
+				chart.isInsidePlot(e.chartX - chart.plotLeft, e.chartY - chart.plotTop)) && !chart.openMenu) {
 			this.runPointActions(e);
 		}
 	},
@@ -743,7 +753,7 @@ Pointer.prototype = {
 			}
 
 		} else if (e.touches.length === 2) {
-			this.pinch(e);	
+			this.pinch(e);
 		}		
 	},
 
