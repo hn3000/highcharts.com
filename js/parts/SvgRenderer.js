@@ -71,7 +71,8 @@ SVGElement.prototype = {
 			shadows = wrapper.shadows,
 			hasSetSymbolSize,
 			doTransform,
-			ret = wrapper;
+			ret = wrapper,
+			num;
 
 		// single key-value pair
 		if (isString(hash) && defined(val)) {
@@ -90,7 +91,10 @@ SVGElement.prototype = {
 			}
 			ret = attr(element, key) || wrapper[key] || 0;
 			if (key !== 'd' && key !== 'visibility') { // 'd' is string in animation step
-				ret = parseFloat(ret);
+				num = parseFloat(ret);
+				if (num == num) {
+				  ret = num;
+				}				
 			}
 
 		// setter
